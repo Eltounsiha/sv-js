@@ -64,7 +64,7 @@ async function localiserIP(ip) {
 
 // Route principale : renvoie la page vidéo côté client
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  res.sendFile(path.join(__dirname, "sv-js", "index.html"));
 });
 
 // Middleware pour logger infos côté serveur
